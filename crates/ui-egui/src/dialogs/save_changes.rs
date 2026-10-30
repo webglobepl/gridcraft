@@ -10,6 +10,7 @@ pub(super) fn save_changes(app: &mut SheetApp, ui: &mut egui::Ui, d: &Dialog, op
     let title = d.values.get("title").and_then(Json::as_str).unwrap_or(lang.tr("this workbook"));
     let quitting = d.values.get("quit").and_then(Json::as_bool) == Some(true);
     let mut answer = None;
+    let mut save_as = None;
     egui::Frame::new().inner_margin(20).show(ui, |ui| {
         ui.spacing_mut().item_spacing = vec2(10.0, 10.0);
         ui.label(RichText::new(lang.tr("Save before closing?")).size(19.0).strong());
@@ -45,9 +46,31 @@ pub(super) fn save_changes(app: &mut SheetApp, ui: &mut egui::Ui, d: &Dialog, op
                 if ui.add(egui::Button::new(lang.tr("Cancel")).min_size(vec2(96.0, 36.0)).corner_radius(6)).clicked() {
                     answer = Some(SaveAnswer::Cancel);
                 }
+                ui.scope(|ui| {
+                    ui.spacing_mut().interact_size = vec2(112.0, 36.0);
+                    ui.spacing_mut().button_padding = vec2(12.0, 6.0);
+                    ui.visuals_mut().widgets.inactive.corner_radius = egui::CornerRadius::same(6);
+                    ui.visuals_mut().widgets.hovered.corner_radius = egui::CornerRadius::same(6);
+                    ui.visuals_mut().widgets.active.corner_radius = egui::CornerRadius::same(6);
+                    ui.menu_button(lang.tr("Save As…"), |ui| {
+                        for (format, label) in crate::backstage::SAVE_TYPES {
+                            if ui.button(lang.tr(label)).clicked() {
+                                save_as = Some(format);
+                                ui.close();
+                            }
+                        }
+                    });
+                });
             });
         });
     });
+    if let Some(format) = save_as
+        && app.save_as_format(Some(format))
+        && app.session.active().is_some_and(|doc| !doc.is_dirty())
+    {
+        // Only a full-workbook save may complete the close; CSV/PDF exports keep the prompt.
+        *open = !app.answer_save_changes(SaveAnswer::DontSave, quitting, ui.ctx());
+    }
     if let Some(answer) = answer
         && app.answer_save_changes(answer, quitting, ui.ctx())
     {

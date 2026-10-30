@@ -647,3 +647,78 @@ fn control_requests_route_to_a_window_and_list_windows() {
     let r = call(&mut h, "engine.execute", serde_json::json!({"command": "cell.get", "params": {"cell": "A1"}, "window": 999}));
     assert_eq!(r["ok"], false, "{r}");
 }
+
+#[test]
+fn save_as_from_close_writes_each_format_and_only_closes_full_workbook_saves() {
+    for (ext, label) in gridcraft_ui_egui::backstage::SAVE_TYPES {
+        let path = std::env::temp_dir().join(format!("gridcraft-save-as-{}.{ext}", std::process::id()));
+        let destination = path.to_string_lossy().into_owned();
+        let mut h = harness(Services {
+            pick_save: Some(Box::new(move |suggested| {
+                assert!(suggested.ends_with(&format!(".{ext}")), "{suggested}");
+                Some(destination.clone())
+            })),
+            ..Default::default()
+        });
+        h.state_mut().run("cell.set", serde_json::json!({"cell":"A1", "input":"42"})).unwrap();
+        let document = h.state().session.active().unwrap().uid;
+        h.state_mut().run("file.close", serde_json::json!({})).unwrap();
+        h.run_steps(3);
+        click(&mut h, "Save As…");
+        click(&mut h, label);
+        let bytes = std::fs::read(&path).unwrap();
+        assert!(!bytes.is_empty(), "{ext}");
+        if matches!(ext, "xlsx" | "xlsm" | "json") {
+            let (wb, _) = gridcraft_engine::io::open_bytes(&path.to_string_lossy(), &bytes).unwrap();
+            assert_eq!(wb.active().unwrap().value(CellRef::new(0, 0)), Value::Number(42.0));
+            assert!(!h.state().session.documents().iter().any(|doc| doc.uid == document), "{ext}");
+            assert!(h.state().dialog.is_none());
+        } else {
+            assert_eq!(h.state().session.documents().len(), 1, "{ext} export must not discard the workbook");
+            assert!(h.state().session.active().unwrap().is_dirty());
+            assert_eq!(h.state().dialog.as_ref().map(|d| d.name()), Some("saveChanges"));
+            if ext == "pdf" {
+                assert!(bytes.starts_with(b"%PDF-"));
+            } else {
+                assert!(String::from_utf8_lossy(&bytes).contains("42"));
+            }
+        }
+        std::fs::remove_file(path).unwrap();
+    }
+}
+
+#[test]
+fn canceling_save_as_keeps_the_close_prompt_and_workbook() {
+    let mut h = harness(Services { pick_save: Some(Box::new(|_| None)), ..Default::default() });
+    h.state_mut().run("cell.set", serde_json::json!({"cell":"A1", "input":"42"})).unwrap();
+    h.state_mut().run("file.close", serde_json::json!({})).unwrap();
+    h.run_steps(3);
+    click(&mut h, "Save As…");
+    click(&mut h, "Excel Workbook (*.xlsx)");
+    assert_eq!(h.state().dialog.as_ref().map(|d| d.name()), Some("saveChanges"));
+    assert!(h.state().session.active().unwrap().is_dirty());
+    assert!(h.state().message.is_none());
+}
+
+#[test]
+fn save_as_from_close_downloads_the_selected_web_format() {
+    let downloads = Arc::new(Mutex::new(Vec::<(String, Vec<u8>)>::new()));
+    let capture = downloads.clone();
+    let mut h = harness(Services {
+        download: Some(Box::new(move |name, bytes| capture.lock().unwrap().push((name.to_owned(), bytes.to_vec())))),
+        ..Default::default()
+    });
+    h.state_mut().run("cell.set", serde_json::json!({"cell":"A1", "input":"42"})).unwrap();
+    h.state_mut().run("file.close", serde_json::json!({})).unwrap();
+    h.run_steps(3);
+    for (ext, label) in gridcraft_ui_egui::backstage::SAVE_TYPES {
+        click(&mut h, "Save As…");
+        click(&mut h, label);
+        let files = downloads.lock().unwrap();
+        let (name, bytes) = files.last().unwrap();
+        assert!(name.ends_with(&format!(".{ext}")), "{name}");
+        assert!(!bytes.is_empty());
+        assert!(h.state().session.active().unwrap().is_dirty(), "a handed-off download is not a confirmed save");
+    }
+    assert_eq!(downloads.lock().unwrap().len(), gridcraft_ui_egui::backstage::SAVE_TYPES.len());
+}

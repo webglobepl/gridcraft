@@ -16,7 +16,7 @@ with header, delimiter, decimal and column-type controls. Turning it off uses or
 The dialog uses two opening-mode cards, separated settings and preview sections, and a primary action that names the selected mode. Ordinary opening hides inapplicable import controls. Light and dark themes use the shared tokens. Cancel leaves the current workbook unchanged; conversion errors cannot partially change it.
 Programmatic `file.open` stays dialog-free; `csvImport` accepts Text/CSV import options.
 
-The close confirmation separates Don't Save from Cancel and the primary Save button, with an explicit unsaved-changes warning and a dedicated workbook-name panel.
+The close confirmation separates Don't Save from Cancel and the primary Save button, with an explicit unsaved-changes warning and a dedicated workbook-name panel. Its Save As menu and File > Save As share XLSX, XLSM, CSV, TSV, JSON, HTML and PDF formats. Canceling or failing Save As keeps the prompt; an export keeps the unsaved workbook open. Native file dialogs offer the same seven formats; browser downloads use the selected format.
 
 ## Window and chrome
 

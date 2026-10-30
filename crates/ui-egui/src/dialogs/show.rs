@@ -141,7 +141,7 @@ pub fn show(app: &mut SheetApp, ctx: &egui::Context) {
         "zoom" => 220.0,
         "pasteSpecial" => 480.0,
         "importText" => 820.0,
-        "saveChanges" => 520.0,
+        "saveChanges" => 640.0,
         _ => 380.0,
     };
     let window = egui::Window::new(app.ui.language.tr(&d.title))

@@ -128,10 +128,17 @@ pub struct Backstage {
     recent: RecentFiles,
 }
 
-/// Save As file types: (extension, label). The first is the workbook itself; the others are
+/// Save As file types: (extension, label). XLSX, XLSM and JSON save the workbook; the others are
 /// exports that leave the workbook's own file and unsaved state alone.
-pub const SAVE_TYPES: [(&str, &str); 4] =
-    [("xlsx", "Excel Workbook (*.xlsx)"), ("csv", "CSV UTF-8 (Comma delimited) (*.csv)"), ("html", "Web Page (*.html)"), ("pdf", "PDF (*.pdf)")];
+pub const SAVE_TYPES: [(&str, &str); 7] = [
+    ("xlsx", "Excel Workbook (*.xlsx)"),
+    ("xlsm", "Macro-enabled Workbook (*.xlsm)"),
+    ("csv", "CSV UTF-8 (Comma delimited) (*.csv)"),
+    ("tsv", "Tab-separated Text (*.tsv)"),
+    ("json", "GridCraft Workbook (*.json)"),
+    ("html", "Web Page (*.html)"),
+    ("pdf", "PDF (*.pdf)"),
+];
 
 impl Backstage {
     pub fn new(page: Page) -> Backstage {
@@ -668,7 +675,7 @@ fn info(app: &mut SheetApp, ui: &mut Ui, bs: &mut Backstage) {
     });
 }
 
-/// Draws the Save As type picker and action: xlsx opens the `saveAs` dialog, other types export, and the page closes when the save/export succeeds (or a web download handles it).
+/// Draws the Save As type picker and action: workbook types save, other types export, and the page closes when the save/export succeeds (or a web download handles it).
 fn save_as(app: &mut SheetApp, ui: &mut Ui, bs: &mut Backstage, out: &mut Outcome) {
     let lang = app.ui.language;
     dim(ui, lang.tr("Save the workbook under another name or in another folder."));
@@ -695,9 +702,9 @@ fn save_as(app: &mut SheetApp, ui: &mut Ui, bs: &mut Backstage, out: &mut Outcom
     let web = app.services.pick_save.is_none() && app.services.download.is_some();
     let label = if web { format!("{} (.{fmt})", lang.tr("Download")) } else { lang.tr("Browse…").to_string() };
     if square_button(ui, Icon::OpenFolder, &label).clicked() && app.commit_edit(0, 0, false, false) {
-        if fmt == "xlsx" {
+        if matches!(fmt, "xlsx" | "xlsm" | "json") {
             let before = app.session.active().map(|d| (d.path.clone(), d.is_dirty()));
-            app.open_dialog("saveAs", json!({}));
+            app.save_as_format(Some(fmt));
             let after = app.session.active().map(|d| (d.path.clone(), d.is_dirty()));
             if after != before || app.services.pick_save.is_none() {
                 out.close = true;
@@ -739,6 +746,7 @@ pub fn export_as(app: &mut SheetApp, fmt: &str) -> bool {
         "pdf" => "file.exportPdf",
         "csv" => "file.exportCsv",
         "html" => "file.exportHtml",
+        "tsv" => "file.saveAs",
         _ => return false,
     };
     let title = app.session.active().map(|d| d.display_title()).unwrap_or_else(|| "Book1".into());

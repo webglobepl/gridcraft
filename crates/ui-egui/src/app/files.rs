@@ -1,6 +1,58 @@
 use super::{Json, Notice, NoticeKind, OpenWindow, SheetApp, clean_error, json};
 
 impl SheetApp {
+    /// Save As uses the selected extension on desktop and downloads that format on the web.
+    /// A canceled picker or an error returns false; an export never clears the workbook's dirty flag.
+    pub(crate) fn save_as_format(&mut self, format: Option<&str>) -> bool {
+        if !self.commit_edit(0, 0, false, false) {
+            return false;
+        }
+        let title = self.session.active().map(|d| d.display_title()).unwrap_or_else(|| "Book1.xlsx".into());
+        let original = std::path::Path::new(&title).extension().and_then(|x| x.to_str()).unwrap_or("xlsx");
+        let format = format.unwrap_or(original);
+        let format = if crate::backstage::SAVE_TYPES.iter().any(|(ext, _)| *ext == format) { format } else { "xlsx" };
+        let suggested = std::path::Path::new(&title).with_extension(format).to_string_lossy().into_owned();
+        if let Some(pick) = &self.services.pick_save {
+            let Some(path) = pick(&suggested) else {
+                return false;
+            };
+            let path = if std::path::Path::new(&path).extension().is_none() { format!("{path}.{format}") } else { path };
+            return match self.run("file.saveAs", json!({"path": path})) {
+                Ok(_) => true,
+                Err(e) => {
+                    self.message = Some(("GridCraft".into(), clean_error(&e)));
+                    false
+                }
+            };
+        }
+        if self.services.download.is_none() {
+            return false;
+        }
+        if format == "pdf" {
+            return match self.run("file.exportPdf", json!({})) {
+                Ok(_) => true,
+                Err(e) => {
+                    self.message = Some(("GridCraft".into(), clean_error(&e)));
+                    false
+                }
+            };
+        }
+        match self.run("file.saveBytes", json!({"format": format})) {
+            Ok(r) => {
+                if let Some(bytes) = r.get("base64").and_then(Json::as_str).and_then(gridcraft_engine::io::base64_decode)
+                    && let Some(download) = &self.services.download
+                {
+                    download(r.get("name").and_then(Json::as_str).unwrap_or(&suggested), &bytes);
+                    return true;
+                }
+                false
+            }
+            Err(e) => {
+                self.message = Some(("GridCraft".into(), clean_error(&e)));
+                false
+            }
+        }
+    }
     pub fn open_path(&mut self, path: &str) {
         if self.dialog.is_some() {
             self.pending_open_paths.push_back(path.to_string());
