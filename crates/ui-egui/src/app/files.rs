@@ -2,6 +2,18 @@ use super::{Json, Notice, NoticeKind, OpenWindow, SheetApp, clean_error, json};
 
 impl SheetApp {
     pub fn open_path(&mut self, path: &str) {
+        if self.dialog.is_some() {
+            self.pending_open_paths.push_back(path.to_string());
+            return;
+        }
+        if is_delimited_text(path) {
+            self.open_dialog("importText", json!({"path": path, "openAsWorkbook": true}));
+            return;
+        }
+        self.open_path_direct(path);
+    }
+
+    pub(crate) fn open_path_direct(&mut self, path: &str) {
         match self.run("file.open", json!({"path": path})) {
             Ok(r) => self.after_open(Some(path), &r),
             // A password-protected workbook: ask for the password; the dialog opens it.
@@ -77,6 +89,12 @@ impl SheetApp {
 
     /// Opens files that arrived asynchronously (web file picker, dropped files).
     pub(super) fn poll_async_opens(&mut self) {
+        if self.dialog.is_none()
+            && self.message.is_none()
+            && let Some(path) = self.pending_open_paths.pop_front()
+        {
+            self.open_path(&path);
+        }
         let arrived: Vec<(String, Vec<u8>)> = self
             .services
             .inbox
@@ -84,6 +102,16 @@ impl SheetApp {
             .map(|i| std::mem::take(&mut *i.lock().unwrap_or_else(std::sync::PoisonError::into_inner)))
             .unwrap_or_default();
         for (name, bytes) in arrived {
+            if is_delimited_text(&name) {
+                if self.dialog.is_some() {
+                    if let Some(inbox) = &self.services.inbox {
+                        inbox.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push((name, bytes));
+                    }
+                    continue;
+                }
+                self.open_dialog("importText", json!({"name": name, "base64": gridcraft_engine::io::base64_encode(&bytes), "openAsWorkbook": true}));
+                continue;
+            }
             let b64 = gridcraft_engine::io::base64_encode(&bytes);
             match self.run("file.open", json!({"name": &name, "base64": &b64})) {
                 // A file picked from File › Open (web) arrives here: show it, not the Backstage.
@@ -123,5 +151,50 @@ impl SheetApp {
     /// preferences, so it stays as the user left it across restarts (#1901).
     pub fn toggle_autosave(&mut self) {
         self.ui.autosave = !self.ui.autosave;
+    }
+}
+
+fn is_delimited_text(name: &str) -> bool {
+    std::path::Path::new(name).extension().and_then(|x| x.to_str()).is_some_and(|x| matches!(x.to_ascii_lowercase().as_str(), "csv" | "tsv" | "txt"))
+}
+
+#[cfg(test)]
+mod csv_open_tests {
+    use super::*;
+
+    #[test]
+    fn csv_open_waits_for_choice_and_queues_the_next_path() {
+        let path = std::env::temp_dir().join(format!("gridcraft-choice-{}.CSV", std::process::id()));
+        std::fs::write(&path, "Kod;Kwota\n007;1,5\n").unwrap();
+        let path = path.to_string_lossy().into_owned();
+        let mut session = gridcraft_engine::Session::default();
+        session.new_workbook();
+        let mut app = SheetApp::new(session, Default::default());
+        let original = app.session.active().unwrap().wb.clone();
+        app.open_path(&path);
+        assert_eq!(app.dialog.as_ref().unwrap().command, Some("file.open"));
+        assert_eq!(app.session.active().unwrap().wb, original);
+        app.open_path(&path);
+        assert_eq!(app.pending_open_paths.len(), 1);
+        app.dialog = None; // Cancel the first preview.
+        app.poll_async_opens();
+        assert!(app.dialog.is_some());
+        assert!(app.pending_open_paths.is_empty());
+        assert_eq!(app.session.active().unwrap().wb, original);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn csv_extension_does_not_recurse_for_a_binary_workbook() {
+        let mut session = gridcraft_engine::Session::default();
+        session.new_workbook();
+        let mut app = SheetApp::new(session, Default::default());
+        let bytes = gridcraft_engine::io::save_bytes(&app.session.active().unwrap().wb, "book.xlsx").unwrap();
+        let path = std::env::temp_dir().join(format!("gridcraft-binary-{}.csv", std::process::id()));
+        std::fs::write(&path, bytes).unwrap();
+        app.open_path(&path.to_string_lossy());
+        assert!(app.dialog.is_none());
+        assert!(app.message.is_none(), "{:?}", app.message);
+        std::fs::remove_file(path).unwrap();
     }
 }

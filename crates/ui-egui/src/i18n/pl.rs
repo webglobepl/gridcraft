@@ -410,6 +410,9 @@ pub(super) fn translate(text: &str) -> Option<&'static str> {
         "Calculation settings are saved with the workbook." => "Ustawienia obliczeń są zapisywane razem ze skoroszytem.",
         "OK" => "OK",
         "Cancel" => "Anuluj",
+        "Save before closing?" => "Zapisać zmiany przed zamknięciem?",
+        "This workbook has unsaved changes." => "Ten skoroszyt zawiera niezapisane zmiany.",
+        "If you don't save, your changes will be lost." => "Jeśli nie zapiszesz zmian, zostaną one utracone.",
         "Don't Save" => "Nie zapisuj",
         "Open…" => "Otwórz…",
         "Show password" => "Pokaż hasło",
@@ -563,6 +566,29 @@ pub(super) fn translate(text: &str) -> Option<&'static str> {
         "Destination:" => "Miejsce docelowe:",
         "My data has headers" => "Moje dane mają nagłówki",
         // Data › Get Data (Text/CSV): Import Text/CSV (#2109)
+        "Convert CSV to a formatted table" => "Przekształć CSV w sformatowaną tabelę",
+        "The table will open as a new XLSX workbook. The original file stays unchanged." => {
+            "Tabela otworzy się jako nowy skoroszyt XLSX. Plik źródłowy pozostanie bez zmian."
+        }
+        "Open normally without a table. Import settings below are not applied." => {
+            "Otwórz zwyczajnie, bez tabeli. Poniższe ustawienia importu nie będą zastosowane."
+        }
+        "Review your data before opening" => "Sprawdź dane przed otwarciem",
+        "Formatted table" => "Sformatowana tabela",
+        "Filters, readable columns and a new XLSX workbook" => "Filtry, czytelne kolumny i nowy skoroszyt XLSX",
+        "Standard opening" => "Zwykłe otwarcie",
+        "Open the original file without creating a table" => "Otwórz plik źródłowy bez tworzenia tabeli",
+        "Ready to open" => "Plik gotowy do otwarcia",
+        "Standard opening uses the file's original layout. Choose Formatted table to adjust columns and data types." => {
+            "Plik zostanie otwarty w zwykłym układzie. Wybierz sformatowaną tabelę, aby ustawić kolumny i typy danych."
+        }
+        "Import settings" => "Ustawienia importu",
+        "Data preview" => "Podgląd danych",
+        "First {count} rows" => "Pierwsze wiersze: {count}",
+        "For codes such as 007, choose Text to keep leading zeros." => "Dla kodów, np. 007, wybierz typ Tekstowe, aby zachować zera na początku.",
+        "Your source file stays unchanged." => "Plik źródłowy pozostanie bez zmian.",
+        "Open as table" => "Otwórz jako tabelę",
+        "Open file" => "Otwórz plik",
         "Import Text/CSV" => "Importuj tekst/CSV",
         "Detect automatically" => "Wykryj automatycznie",
         "Dot (1.5)" => "Kropka (1.5)",

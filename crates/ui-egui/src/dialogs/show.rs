@@ -140,7 +140,8 @@ pub fn show(app: &mut SheetApp, ctx: &egui::Context) {
         "solver" => 460.0,
         "zoom" => 220.0,
         "pasteSpecial" => 480.0,
-        "importText" => 760.0,
+        "importText" => 820.0,
+        "saveChanges" => 520.0,
         _ => 380.0,
     };
     let window = egui::Window::new(app.ui.language.tr(&d.title))
@@ -180,7 +181,7 @@ pub fn show(app: &mut SheetApp, ctx: &egui::Context) {
                 "solver" => solver(ui, &mut d, &mut confirm, &mut open),
                 "solverResults" => solver_results(app, ui, &mut d, &mut open),
                 "spelling" => spelling(app, ui, &mut d, &mut open),
-                "importText" => import_text(app, ui, &mut d, &mut confirm, &mut open),
+                "importText" => { egui::Frame::new().inner_margin(16).show(ui, |ui| import_text(app, ui, &mut d, &mut confirm, &mut open)); },
                 "agents" => {
                     ui.label(lang.tr("GridCraft is fully drivable by agents. Every menu item, button and gesture is a command:"));
                     ui.add_space(4.0);
@@ -311,19 +312,7 @@ pub fn show(app: &mut SheetApp, ctx: &egui::Context) {
                         }
                     }
                 }
-                "saveChanges" => {
-                    ui.label(lang.tr("Do you want to save the changes you made to {title}?").replace("{title}", d.values.get("title").and_then(Json::as_str).unwrap_or(lang.tr("this workbook"))));
-                    let quitting = d.values.get("quit").and_then(Json::as_bool) == Some(true);
-                    ui.horizontal(|ui| {
-                        for (label, answer) in
-                            [("Don't Save", crate::SaveAnswer::DontSave), ("Cancel", crate::SaveAnswer::Cancel), ("Save", crate::SaveAnswer::Save)]
-                        {
-                            if ui.button(lang.tr(label)).clicked() && app.answer_save_changes(answer, quitting, ui.ctx()) {
-                                open = false;
-                            }
-                        }
-                    });
-                }
+                "saveChanges" => super::save_changes::save_changes(app, ui, &d, &mut open),
                 "start" => {
                     ui.heading(lang.tr("Start a new workbook"));
                     ui.horizontal_wrapped(|ui| {
@@ -386,7 +375,7 @@ pub fn show(app: &mut SheetApp, ctx: &egui::Context) {
                 open = false;
                 if d.name == "solver" {
                     app.open_dialog("solverResults", r);
-                } else if d.name == "openPassword" {
+                } else if d.name == "openPassword" || (d.name == "importText" && d.command == Some("file.open")) {
                     let path = d.values.get("path").and_then(Json::as_str).map(str::to_string);
                     app.after_open(path.as_deref(), &r);
                 }

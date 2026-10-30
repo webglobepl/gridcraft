@@ -34,6 +34,7 @@ impl SheetApp {
             editor: None,
             text_box_editor: None,
             dialog: None,
+            pending_open_paths: Default::default(),
             backstage: None,
             message: None,
             toast: None,

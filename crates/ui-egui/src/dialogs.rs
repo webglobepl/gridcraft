@@ -25,6 +25,7 @@ mod import_text;
 mod insert_function;
 mod names;
 mod paste;
+mod save_changes;
 mod show;
 mod spelling;
 mod zoom;

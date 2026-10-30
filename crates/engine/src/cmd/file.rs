@@ -8,7 +8,7 @@ use crate::DocState;
 pub fn specs() -> Vec<CommandSpec> {
     vec![
         cmd!(noundo "file.new", "New Workbook", ["File"], Some("Cmd+N"), "{sample?: \"budget\"|\"sales\"|\"grades\"}", always, new_workbook),
-        cmd!(noundo "file.open", "Open…", ["File"], Some("Cmd+O"), "{path} | {name, base64}, plus {password} for a password-protected workbook and {csvAsText?: bool} to keep every csv/tsv/txt field as text, with no number or date conversion (xlsx, xlsm, xls import, xlsb and ods data import, csv, tsv, txt, json)", always, open),
+        cmd!(noundo "file.open", "Open…", ["File"], Some("Cmd+O"), "{path} | {name, base64}, plus {csvImport?: object} to open a new formatted XLSX using data.fromTextCsv settings, {password} for a password-protected workbook and {csvAsText?: bool} to keep every csv/tsv/txt field as text, with no number or date conversion (xlsx, xlsm, xls import, xlsb and ods data import, csv, tsv, txt, json)", always, open),
         cmd!(noundo "file.save", "Save", ["File"], Some("Cmd+S"), "{path?} (xlsx by default; .csv/.tsv/.json/.html/.pdf by extension)", has_doc, save),
         cmd!(noundo "file.saveAs", "Save As…", ["File"], Some("Cmd+Shift+S"), "{path} (.xlsx, .csv, .tsv, .json, .html, or .pdf: a PDF of the active sheet)", has_doc, save_as),
         cmd!(query "file.saveBytes", "Encode Workbook", [], None, "{format?: xlsx|csv|tsv|json|html} → {base64}", has_doc, save_bytes),
@@ -48,7 +48,9 @@ fn open(s: &mut Session, p: &Json) -> Result<Json> {
         (str_param(p, "name").unwrap_or("Book.xlsx").to_string(), crate::io::base64_decode(b).ok_or_else(|| bad("file.open", "invalid base64"))?)
     } else if let Some(path) = str_param(p, "path") {
         // Already open? Switch to it.
-        if let Some(i) = s.documents().iter().position(|d| d.path.as_deref() == Some(path)) {
+        if p.get("csvImport").is_none()
+            && let Some(i) = s.documents().iter().position(|d| d.path.as_deref() == Some(path))
+        {
             s.set_active(i);
             return Ok(json!({"index": i, "alreadyOpen": true}));
         }
@@ -57,8 +59,24 @@ fn open(s: &mut Session, p: &Json) -> Result<Json> {
         s.ui_requests.push(crate::UiRequest::Dialog("open".into(), json!({})));
         return ok();
     };
+    let csv_import = p.get("csvImport").filter(|v| v.is_object());
     let encrypted = gridcraft_xlsx::sniff(&bytes) == gridcraft_xlsx::Format::Encrypted;
-    let (mut wb, warnings) = crate::io::open_bytes_with(&name, &bytes, str_param(p, "password"), bool_param(p, "csvAsText").unwrap_or(false))?;
+    let (mut wb, warnings) = if let Some(options) = csv_import {
+        // Build in isolation: failed conversion leaves the user's workbook unchanged.
+        let mut staging = Session::default();
+        staging.new_workbook();
+        let mut options = options.clone();
+        if let Some(o) = options.as_object_mut() {
+            o.remove("path");
+            o.remove("text");
+        }
+        options["base64"] = json!(crate::io::base64_encode(&bytes));
+        staging.execute("data.fromTextCsv", options)?;
+        staging.execute("home.deleteSheet", json!({"sheet": 0}))?;
+        (staging.doc()?.wb.as_ref().clone(), Vec::new())
+    } else {
+        crate::io::open_bytes_with(&name, &bytes, str_param(p, "password"), bool_param(p, "csvAsText").unwrap_or(false))?
+    };
     wb.source_dir = str_param(p, "path").and_then(crate::io::source_dir);
     // What `CELL("filename")` reports (#1489). A workbook opened from bytes knows its name but
     // never a folder, so it reports `[name]Sheet` with none; an import reports the file it came
@@ -67,9 +85,9 @@ fn open(s: &mut Session, p: &Json) -> Result<Json> {
         Some(path) => crate::io::source_path(path),
         None => Some(std::path::PathBuf::from(&name)),
     };
-    let imported =
-        matches!(crate::io::FileKind::from_path(&name), Some(crate::io::FileKind::Ods | crate::io::FileKind::Xlsb | crate::io::FileKind::Xls))
-            || matches!(gridcraft_xlsx::sniff(&bytes), gridcraft_xlsx::Format::Ods | gridcraft_xlsx::Format::Xlsb | gridcraft_xlsx::Format::Xls);
+    let imported = csv_import.is_some()
+        || matches!(crate::io::FileKind::from_path(&name), Some(crate::io::FileKind::Ods | crate::io::FileKind::Xlsb | crate::io::FileKind::Xls))
+        || matches!(gridcraft_xlsx::sniff(&bytes), gridcraft_xlsx::Format::Ods | gridcraft_xlsx::Format::Xlsb | gridcraft_xlsx::Format::Xls);
     let title = if imported {
         format!("{} (imported).xlsx", std::path::Path::new(&name).file_stem().and_then(std::ffi::OsStr::to_str).unwrap_or("Book"))
     } else {
@@ -87,6 +105,10 @@ fn open(s: &mut Session, p: &Json) -> Result<Json> {
     }
     // Someone else may have made the file: its active content asks before it runs.
     let mut doc = DocState::new(wb, path, title, crate::Trust::FromFile);
+    if csv_import.is_some() {
+        // The formatted table has not been saved yet, so closing must offer Save As.
+        doc.wb = std::sync::Arc::new(doc.wb.as_ref().clone());
+    }
     if crate::io::FileKind::from_path(&name).is_none() && gridcraft_xlsx::sniff(&bytes) == gridcraft_xlsx::Format::Xlsx {
         doc.content_kind = Some(crate::io::FileKind::Xlsx);
     }

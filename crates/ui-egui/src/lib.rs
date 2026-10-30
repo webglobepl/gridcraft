@@ -209,6 +209,7 @@ pub struct SheetApp {
     pub editor: Option<editor::EditState>,
     pub text_box_editor: Option<text_box::EditState>,
     pub dialog: Option<dialogs::Dialog>,
+    pending_open_paths: std::collections::VecDeque<String>,
     /// The File tab's Backstage view, when open (UI-only; replaces the ribbon, grid and tabs).
     pub backstage: Option<backstage::Backstage>,
     pub message: Option<(String, String)>,
